@@ -11,7 +11,8 @@ from telegram.ext import (
 )
 
 TOKEN = "8675610533:AAFsOqT3x4BFTg0pI-Gj5YB3sNk95kmVSyA"
-API_KEY = "06d0849cc962ff2cd360c13967443468b0a8abd7ce7e724786a585ef96573003"
+API_KEY = "biteship_live.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYm90LXJlc2kiLCJ1c2VySWQiOiI2OWU1ODc4MGRhZTM3ODU2ZjBmNjYzM2IiLCJpYXQiOjE3NzY2NzYxNzR9.-UHMIAwRuONnVcoT63X2k41wYVc_EOBsa1pjxbZW3b4
+"
 
 ASK_RESI = 1
 
@@ -21,32 +22,23 @@ reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 user_courier = {}
 
 
-def detect_cod(summary: dict, history: list) -> tuple[bool, str]:
-    service = str(summary.get("service", "")).upper()
-    desc = str(summary.get("desc", "")).upper()
-    amount = str(summary.get("amount", "")).strip()
-
-    history_text = " ".join(
-        str(item.get("desc", "")).upper() for item in history if isinstance(item, dict)
-    )
-
-    full_text = f"{service} {desc} {history_text}"
-
-    cod_keywords = [
-        "COD",
-        "CASH ON DELIVERY",
-        "BAYAR DI TEMPAT",
-    ]
-
-    is_cod = any(keyword in full_text for keyword in cod_keywords)
-
-    if is_cod and amount and amount != "-":
-        return True, amount
-
-    if is_cod:
-        return True, ""
-
-    return False, ""
+def map_status(status: str) -> str:
+    status_map = {
+        "confirmed": "Pesanan dikonfirmasi",
+        "allocated": "Kurir dialokasikan",
+        "pickingUp": "Kurir menuju pickup",
+        "picked": "Paket sudah diambil",
+        "droppingOff": "Paket dalam pengiriman",
+        "returnInTransit": "Paket retur dalam perjalanan",
+        "onHold": "Paket ditahan sementara",
+        "delivered": "Paket sudah diterima",
+        "rejected": "Paket ditolak",
+        "courierNotFound": "Kurir tidak ditemukan",
+        "returned": "Paket berhasil diretur",
+        "cancelled": "Pesanan dibatalkan",
+        "disposed": "Pesanan dibuang",
+    }
+    return status_map.get(status, status)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,72 +88,74 @@ async def cek_resi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if courier == "jnt":
         courier_label = "J&T Express"
         title_label = "🛒 PESANAN LAZADA J&T"
+        courier_code = "jnt"
     else:
         courier_label = "Ninja Xpress"
         title_label = "🛒 PESANAN LAZADA NINJA"
+        courier_code = "ninja"
 
     await update.message.reply_text(
         f"🔍 Mengecek {len(resi_list)} resi...\nMohon tunggu ⏳",
         reply_markup=reply_markup
     )
 
+    headers = {
+        "Authorization": API_KEY
+    }
+
     for resi in resi_list:
-        url = "https://api.binderbyte.com/v1/track"
-        params = {
-            "api_key": API_KEY,
-            "courier": courier,
-            "awb": resi
-        }
+        url = f"https://api.biteship.com/v1/trackings/{resi}/couriers/{courier_code}"
 
         try:
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, headers=headers, timeout=15)
             data = response.json()
         except Exception:
             await update.message.reply_text(
-                f"❌ {resi}\nGagal mengambil data (timeout).",
+                f"❌ {resi}\nGagal mengambil data tracking.",
                 reply_markup=reply_markup
             )
             continue
 
-        if data.get("status") != 200:
+        if not data.get("success", False):
+            message = data.get("message", "Resi tidak ditemukan atau belum aktif.")
             await update.message.reply_text(
-                f"❌ {resi}\nResi tidak ditemukan.",
+                f"❌ {resi}\n{message}",
                 reply_markup=reply_markup
             )
             continue
 
-        hasil = data.get("data", {})
-        summary = hasil.get("summary", {})
-        detail = hasil.get("detail", {})
-        history = hasil.get("history", [])
-        last = history[0] if history else {}
+        history = data.get("history", [])
+        last = history[-1] if history else {}
 
-        is_cod, cod_amount = detect_cod(summary, history)
-        service = str(summary.get("service", "-"))
+        status_raw = data.get("status", "-")
+        status_text = map_status(status_raw)
+
+        penerima = data.get("destination", {}).get("contact_name", "-")
+        alamat = data.get("destination", {}).get("address", "-")
+        driver_name = data.get("courier", {}).get("driver_name", "-")
+        driver_phone = data.get("courier", {}).get("driver_phone", "-")
+        link = data.get("link", "-")
+
+        note = last.get("note", "-")
+        updated_at = last.get("updated_at", "-")
+        hist_status = map_status(last.get("status", "-"))
 
         text = (
             f"{title_label}\n"
             f"📦 EKSPEDISI\n└ {courier_label}\n\n"
-            f"📩 Resi\n├ No Resi : {resi}\n└ Service : {service}\n\n"
-            f"📮 Status\n├ {summary.get('status', '-')}\n└ {summary.get('date', '-')}\n\n"
-            f"🚩 Penerima\n├ {detail.get('receiver', '-')}\n└ {detail.get('destination', '-')}\n\n"
-        )
-
-        if is_cod:
-            if cod_amount:
-                text += f"💰 Pembayaran : COD\n💵 Nominal COD : {cod_amount}\n\n"
-            else:
-                text += "💰 Pembayaran : COD\n\n"
-
-        text += (
+            f"📩 Resi\n├ No Resi : {resi}\n└ Kurir Code : {courier_code}\n\n"
+            f"📮 Status\n├ {status_text}\n└ Update : {updated_at}\n\n"
+            f"🚩 Penerima\n├ {penerima}\n└ {alamat}\n\n"
+            f"🛵 Kurir\n├ Nama : {driver_name}\n└ Telepon : {driver_phone}\n\n"
             f"📍 Update Terakhir\n"
-            f"├ Lokasi : {last.get('location', '-')}\n"
-            f"├ Status : {last.get('desc', '-')}\n"
-            f"└ Waktu : {last.get('date', '-')}"
+            f"├ Status : {hist_status}\n"
+            f"├ Catatan : {note}\n"
+            f"└ Waktu : {updated_at}\n\n"
+            f"🔗 Link Tracking\n└ {link}"
         )
 
         await update.message.reply_text(text, reply_markup=reply_markup)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
 
     await update.message.reply_text("✅ Semua resi selesai dicek.", reply_markup=reply_markup)
     return ConversationHandler.END
