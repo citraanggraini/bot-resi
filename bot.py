@@ -9,60 +9,34 @@ from telegram.ext import (
     filters,
 )
 
-TOKEN = "8675610533:AAHANBzZHAA9VBzgPGNW4SxWKsBSJV9z2GU"
+TOKEN = "8675610533:AAFsOqT3x4BFTg0pI-Gj5YB3sNk95kmVSyA"
 API_KEY = "fdaf0fcf9147f733bcf54b30347d4b377460725818298587ced74e13b3850301"
 
 ASK_RESI = 1
 
-keyboard = [
-    ["🛒 Lazada J&T", "🛒 Lazada Ninja"]
-]
+keyboard = [["🛒 Lazada J&T", "🛒 Lazada Ninja"]]
 reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 user_courier = {}
 
 
-def get_payment_type(summary: dict) -> str:
-    service = str(summary.get("service", "")).upper()
-    desc = str(summary.get("desc", "")).upper()
-    amount = str(summary.get("amount", "")).strip()
-
-    if "COD" in service or "COD" in desc:
-        if amount and amount != "-":
-            return f"COD | {amount}"
-        return "COD"
-
-    if amount and amount != "-":
-        return "NON COD"
-
-    return "NON COD"
-
-
-def get_amount(summary: dict) -> str:
-    amount = str(summary.get("amount", "")).strip()
-    if amount and amount != "-":
-        return amount
-    return "-"
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "🛒 *BOT CEK RESI LAZADA*\n\n"
+        "🛒 BOT CEK RESI LAZADA\n\n"
         "Pilih ekspedisi di bawah:\n"
-        "• 🛒 Lazada J&T\n"
-        "• 🛒 Lazada Ninja"
+        "• Lazada J&T\n"
+        "• Lazada Ninja\n\n"
+        "Kamu juga bisa cek banyak resi sekaligus.\n"
+        "Pisahkan dengan enter, spasi, atau koma."
     )
-    await update.message.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text(text, reply_markup=reply_markup)
 
 
 async def pilih_jnt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_courier[update.effective_user.id] = "jnt"
     await update.message.reply_text(
-        "📩 Masukkan nomor resi Lazada J&T:",
+        "📩 Masukkan nomor resi Lazada J&T:\n\n"
+        "Bisa 1 resi atau banyak resi sekaligus.",
         reply_markup=reply_markup
     )
     return ASK_RESI
@@ -71,14 +45,23 @@ async def pilih_jnt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def pilih_ninja(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_courier[update.effective_user.id] = "ninja"
     await update.message.reply_text(
-        "📩 Masukkan nomor resi Lazada Ninja:",
+        "📩 Masukkan nomor resi Lazada Ninja:\n\n"
+        "Bisa 1 resi atau banyak resi sekaligus.",
         reply_markup=reply_markup
     )
     return ASK_RESI
 
 
 async def cek_resi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    resi = update.message.text.strip().upper()
+    text_input = update.message.text.strip().upper()
+
+    # support banyak resi: enter, spasi, koma
+    resi_list = text_input.replace(",", " ").split()
+
+    if not resi_list:
+        await update.message.reply_text("❌ Masukkan nomor resi dulu.", reply_markup=reply_markup)
+        return ConversationHandler.END
+
     courier = user_courier.get(update.effective_user.id, "jnt")
 
     if courier == "jnt":
@@ -88,91 +71,84 @@ async def cek_resi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         courier_label = "Ninja Xpress"
         title_label = "🛒 PESANAN LAZADA NINJA"
 
-    url = "https://api.binderbyte.com/v1/track"
-    params = {
-        "api_key": API_KEY,
-        "courier": courier,
-        "awb": resi
-    }
+    hasil_text = []
 
-    try:
-        response = requests.get(url, params=params, timeout=30)
-        data = response.json()
-    except Exception:
-        await update.message.reply_text("❌ Gagal mengambil data resi.", reply_markup=reply_markup)
-        return ConversationHandler.END
+    for resi in resi_list:
+        url = "https://api.binderbyte.com/v1/track"
+        params = {
+            "api_key": API_KEY,
+            "courier": courier,
+            "awb": resi
+        }
 
-    if data.get("status") != 200:
-        await update.message.reply_text("❌ Resi tidak ditemukan.", reply_markup=reply_markup)
-        return ConversationHandler.END
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            data = response.json()
+        except Exception:
+            hasil_text.append(
+                f"❌ *{resi}*\n"
+                f"Gagal mengambil data resi.\n"
+            )
+            continue
 
-    hasil = data.get("data", {})
-    summary = hasil.get("summary", {})
-    detail = hasil.get("detail", {})
-    history = hasil.get("history", [])
+        if data.get("status") != 200:
+            hasil_text.append(
+                f"❌ *{resi}*\n"
+                f"Resi tidak ditemukan.\n"
+            )
+            continue
 
-    last = history[0] if history else {}
+        hasil = data.get("data", {})
+        summary = hasil.get("summary", {})
+        detail = hasil.get("detail", {})
+        history = hasil.get("history", [])
+        last = history[0] if history else {}
 
-    receiver = detail.get("receiver", "-")
-    destination = detail.get("destination", "-")
-    service = summary.get("service", "-")
-    status_pengiriman = summary.get("status", "-")
-    date_pengiriman = summary.get("date", "-")
-    pembayaran = get_payment_type(summary)
-    harga_paket = get_amount(summary)
+        status_pengiriman = summary.get("status", "-")
+        date_pengiriman = summary.get("date", "-")
 
-    lokasi_terakhir = last.get("location", "-")
-    desc_terakhir = last.get("desc", "-")
-    waktu_terakhir = last.get("date", "-")
+        hasil_text.append(
+            f"{title_label}\n"
+            f"📦 *EKSPEDISI*\n"
+            f"└ {courier_label}\n\n"
+            f"📩 *Resi*\n"
+            f"├ No Resi : `{resi}`\n"
+            f"└ Service : {summary.get('service', '-')}\n\n"
+            f"📮 *Status*\n"
+            f"├ {status_pengiriman}\n"
+            f"└ {date_pengiriman}\n\n"
+            f"🚩 *Penerima*\n"
+            f"├ {detail.get('receiver', '-')}\n"
+            f"└ {detail.get('destination', '-')}\n\n"
+            f"📍 *Update Terakhir*\n"
+            f"├ Lokasi : {last.get('location', '-')}\n"
+            f"├ Status : {last.get('desc', '-')}\n"
+            f"└ Waktu : {last.get('date', '-')}\n"
+        )
 
-    text = (
-        f"{title_label}\n"
-        "📦 *EKSPEDISI*\n"
-        f"└ {courier_label}\n\n"
-        "📩 *Resi*\n"
-        f"├ No Resi : `{resi}`\n"
-        f"├ Service : {service}\n"
-        f"├ Pembayaran : {pembayaran}\n"
-        f"└ Harga Paket : {harga_paket}\n\n"
-        "📮 *Status*\n"
-        f"├ {status_pengiriman}\n"
-        f"└ {date_pengiriman}\n\n"
-        "🚩 *Penerima*\n"
-        f"├ {receiver}\n"
-        f"└ {destination}\n\n"
-        "📍 *Update Terakhir*\n"
-        f"├ Lokasi : {lokasi_terakhir}\n"
-        f"├ Status : {desc_terakhir}\n"
-        f"└ Waktu : {waktu_terakhir}\n\n"
-        "ℹ️ _Bot ini khusus cek resi pesanan Lazada._"
-    )
+    final_text = "\n━━━━━━━━━━━━━━\n\n".join(hasil_text)
 
-    await update.message.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=reply_markup
-    )
-    return ConversationHandler.END
+    # kalau hasil terlalu panjang, kirim per bagian
+    if len(final_text) <= 4000:
+        await update.message.reply_text(final_text, parse_mode="Markdown", reply_markup=reply_markup)
+    else:
+        potongan = ""
+        for bagian in hasil_text:
+            teks_bagian = bagian + "\n━━━━━━━━━━━━━━\n\n"
+            if len(potongan) + len(teks_bagian) > 4000:
+                await update.message.reply_text(potongan, parse_mode="Markdown", reply_markup=reply_markup)
+                potongan = teks_bagian
+            else:
+                potongan += teks_bagian
 
+        if potongan:
+            await update.message.reply_text(potongan, parse_mode="Markdown", reply_markup=reply_markup)
 
-async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-
-    if text == "🛒 Lazada J&T":
-        return await pilih_jnt(update, context)
-
-    if text == "🛒 Lazada Ninja":
-        return await pilih_ninja(update, context)
-
-    await update.message.reply_text(
-        "Pilih tombol yang tersedia atau ketik /start",
-        reply_markup=reply_markup
-    )
     return ConversationHandler.END
 
 
 async def batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Pengecekan dibatalkan.", reply_markup=reply_markup)
+    await update.message.reply_text("❌ Dibatalkan.", reply_markup=reply_markup)
     return ConversationHandler.END
 
 
@@ -181,7 +157,6 @@ def main():
 
     conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("cek", start),
             MessageHandler(filters.Regex("^🛒 Lazada J&T$"), pilih_jnt),
             MessageHandler(filters.Regex("^🛒 Lazada Ninja$"), pilih_ninja),
         ],
@@ -193,10 +168,10 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button))
 
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
+    
