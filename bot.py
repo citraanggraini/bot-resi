@@ -1,251 +1,230 @@
+import os
 import requests
-import asyncio
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    ConversationHandler,
     ContextTypes,
     filters,
 )
 
-# ================== CONFIG ==================
-TOKEN = "8675610533:AAFsOqT3x4BFTg0pI-Gj5YB3sNk95kmVSyA"
-BITESHIP_API_KEY = "biteship_live.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYm90LXJlc2kiLCJ1c2VySWQiOiI2OWU1ODc4MGRhZTM3ODU2ZjBmNjYzM2IiLCJpYXQiOjE3NzY2NzYxNzR9.-UHMIAwRuONnVcoT63X2k41wYVc_EOBsa1pjxbZW3b4"
-BINDERBYTE_API_KEY = "14405dde2386cb602140b0f9a69489b781a9896b6ccbddd1e0c924f7c073dc64"
+TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
+API_KEY = "69e6273253bfe2f379ff8ee3"
 
-ASK_RESI = 1
-
-keyboard = [["🛒 Lazada J&T", "🛒 Lazada Ninja"]]
-reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-user_courier = {}
+BASE_URL = "https://api.biteship.com/v1"
 
 
-# ================== HELPER ==================
-def detect_cod_from_binderbyte(summary: dict, history: list) -> tuple[bool, str]:
-    service = str(summary.get("service", "")).upper()
-    desc = str(summary.get("desc", "")).upper()
-    amount = str(summary.get("amount", "")).strip()
+def detect_primary_couriers(resi: str):
+    r = resi.upper().strip().replace(" ", "")
 
-    history_text = " ".join(
-        str(item.get("desc", "")).upper() for item in history if isinstance(item, dict)
+    # Lazada J&T / J&T umum
+    if r.startswith("JZ"):
+        return ["jnt"]
+    if r.startswith(("JT", "JP", "JX")):
+        return ["jnt"]
+
+    # JNE
+    if r.startswith("JNE"):
+        return ["jne"]
+
+    # Kalau angka semua, coba beberapa kurir
+    if r.isdigit():
+        return ["jne", "jnt", "sicepat", "ninja", "anteraja"]
+
+    # fallback
+    return ["jnt", "jne", "sicepat", "ninja", "anteraja"]
+
+
+def request_tracking(resi: str, courier: str):
+    url = f"{BASE_URL}/trackings/{resi}/couriers/{courier}"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=20)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception:
+        return None
+
+
+def pick_latest_history(data: dict):
+    history = data.get("history", [])
+    if not history:
+        return None
+    return history[-1]
+
+
+def extract_payment_label(data: dict):
+    courier_info = data.get("courier", {})
+    service = data.get("service", {})
+    payment_type = (
+        service.get("payment_type")
+        or courier_info.get("payment_type")
+        or ""
     )
 
-    full_text = f"{service} {desc} {history_text}"
+    price = (
+        service.get("price")
+        or courier_info.get("price")
+        or data.get("price")
+        or ""
+    )
 
-    cod_keywords = ["COD", "CASH ON DELIVERY", "BAYAR DI TEMPAT"]
-
-    is_cod = any(keyword in full_text for keyword in cod_keywords)
-
-    if is_cod and amount and amount != "-":
-        return True, amount
-
-    if is_cod:
-        return True, ""
-
-    return False, ""
-
-
-def check_biteship(resi: str, courier: str):
-    url = f"https://api.biteship.com/v1/trackings/{resi}/couriers/{courier}"
-    headers = {
-        "Authorization": BITESHIP_API_KEY
-    }
-
-    response = requests.get(url, headers=headers, timeout=10)
-    return response.json()
+    if str(payment_type).upper() == "COD":
+        return f"COD | Rp{price}" if price else "COD"
+    if price:
+        return f"Non COD | Rp{price}"
+    return "Non COD"
 
 
-def check_binderbyte(resi: str, courier: str):
-    url = "https://api.binderbyte.com/v1/track"
-    params = {
-        "api_key": BINDERBYTE_API_KEY,
-        "courier": courier,
-        "awb": resi
-    }
+def build_result_text(resi: str, courier: str, data: dict):
+    latest = pick_latest_history(data)
 
-    response = requests.get(url, params=params, timeout=10)
-    return response.json()
+    courier_name = courier.upper()
+    if courier == "jnt":
+        courier_name = "J&T Express"
+    elif courier == "jne":
+        courier_name = "JNE"
+    elif courier == "sicepat":
+        courier_name = "SiCepat"
+    elif courier == "ninja":
+        courier_name = "Ninja Xpress"
+    elif courier == "anteraja":
+        courier_name = "AnterAja"
+
+    receiver = data.get("destination", {})
+    receiver_name = receiver.get("contact_name") or "-"
+    receiver_address = receiver.get("address") or "-"
+
+    item_name = (
+        data.get("order", {}).get("items_name")
+        or data.get("item_name")
+        or "-"
+    )
+
+    status = data.get("status") or "-"
+    updated_at = data.get("updated_at") or "-"
+
+    latest_note = "-"
+    latest_status = status
+    latest_time = updated_at
+    latest_location = "-"
+    latest_courier = courier_name
+
+    if latest:
+        latest_note = latest.get("note") or "-"
+        latest_status = latest.get("status") or status or "-"
+        latest_time = latest.get("updated_at") or updated_at or "-"
+        latest_location = latest.get("location") or "-"
+
+    payment_label = extract_payment_label(data)
+
+    text = (
+        f"📦 EKSPEDISI {courier_name.upper()}\n\n"
+        f"📩 Resi\n"
+        f"└ No Resi : {resi}\n"
+        f"└ Service : {payment_label}\n\n"
+        f"📮 Status\n"
+        f"└ {latest_status}\n"
+        f"└ {latest_time}\n\n"
+        f"🚩 Penerima\n"
+        f"└ {receiver_name}\n"
+        f"└ {receiver_address}\n\n"
+        f"🛍 Barang\n"
+        f"└ {item_name}\n\n"
+        f"📍 Update Terakhir\n"
+        f"└ Kurir : {latest_courier}\n"
+        f"└ Lokasi Terakhir : {latest_location}\n"
+        f"└ Status : {latest_note}\n"
+        f"└ Waktu : {latest_time}"
+    )
+    return text
 
 
-# ================== START ==================
+def check_tracking(resi: str):
+    couriers = detect_primary_couriers(resi)
+
+    for courier in couriers:
+        data = request_tracking(resi, courier)
+        if isinstance(data, dict):
+            return build_result_text(resi, courier, data)
+
+    return (
+        "❌ Resi tidak ditemukan.\n\n"
+        "Coba pastikan:\n"
+        "- nomor resi benar\n"
+        "- resi sudah aktif di sistem kurir\n"
+        "- resi bukan baru dibuat beberapa menit lalu"
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "🛒 BOT CEK RESI LAZADA\n\n"
-        "Pilih ekspedisi di bawah:\n"
-        "• Lazada J&T\n"
-        "• Lazada Ninja\n\n"
-        "Bisa cek banyak resi sekaligus.\n"
-        "Pisahkan dengan enter, spasi, atau koma."
+        "Bot aktif ✅\n\n"
+        "Cara pakai:\n"
+        "1. Kirim langsung nomor resi\n"
+        "2. Atau pakai /cek NOMOR_RESI\n\n"
+        "Contoh:\n"
+        "JZ10828890501\n"
+        "/cek JZ10828890501"
     )
-    await update.message.reply_text(text, reply_markup=reply_markup)
+    await update.message.reply_text(text)
 
 
-# ================== PILIH KURIR ==================
-async def pilih_jnt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_courier[update.effective_user.id] = "jnt"
-    await update.message.reply_text(
-        "📩 Masukkan nomor resi Lazada J&T:",
-        reply_markup=reply_markup
-    )
-    return ASK_RESI
+async def cek(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "Format salah.\nContoh:\n/cek JZ10828890501"
+        )
+        return
+
+    resi = context.args[0].strip().replace(" ", "")
+    await update.message.reply_text("🔎 Sedang cek resi...")
+
+    try:
+        result = check_tracking(resi)
+        await update.message.reply_text(result)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Terjadi error:\n{e}")
 
 
-async def pilih_ninja(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_courier[update.effective_user.id] = "ninja"
-    await update.message.reply_text(
-        "📩 Masukkan nomor resi Lazada Ninja:",
-        reply_markup=reply_markup
-    )
-    return ASK_RESI
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text.strip()
+
+    # kalau command lain, abaikan
+    if text.startswith("/"):
+        return
+
+    resi = text.replace(" ", "")
+    await update.message.reply_text("🔎 Sedang cek resi...")
+
+    try:
+        result = check_tracking(resi)
+        await update.message.reply_text(result)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Terjadi error:\n{e}")
 
 
-# ================== CEK RESI ==================
-async def cek_resi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text_input = update.message.text.strip().upper()
-    resi_list = text_input.replace(",", " ").split()
-
-    if not resi_list:
-        await update.message.reply_text("❌ Masukkan nomor resi.", reply_markup=reply_markup)
-        return ConversationHandler.END
-
-    if len(resi_list) > 5:
-        await update.message.reply_text("❌ Maksimal 5 resi sekali cek.", reply_markup=reply_markup)
-        return ConversationHandler.END
-
-    courier = user_courier.get(update.effective_user.id, "jnt")
-
-    if courier == "jnt":
-        courier_label = "J&T Express"
-        title_label = "🛒 PESANAN LAZADA J&T"
-    else:
-        courier_label = "Ninja Xpress"
-        title_label = "🛒 PESANAN LAZADA NINJA"
-
-    await update.message.reply_text(
-        f"🔍 Mengecek {len(resi_list)} resi...\nMohon tunggu ⏳",
-        reply_markup=reply_markup
-    )
-
-    for resi in resi_list:
-        biteship_ok = False
-
-        # ===== Coba Biteship dulu =====
-        try:
-            biteship_data = check_biteship(resi, courier)
-
-            if biteship_data.get("success", False):
-                biteship_ok = True
-
-                history = biteship_data.get("history", [])
-                last = history[-1] if history else {}
-
-                status = biteship_data.get("status", "-")
-                note = last.get("note", "-")
-                waktu = last.get("updated_at", "-")
-
-                text = (
-                    f"{title_label}\n"
-                    f"📦 EKSPEDISI\n└ {courier_label}\n\n"
-                    f"📩 Resi\n└ {resi}\n\n"
-                    f"📮 Status\n└ {status}\n\n"
-                    f"📍 Update Terakhir\n"
-                    f"├ Keterangan : {note}\n"
-                    f"└ Waktu : {waktu}\n\n"
-                    f"🔎 Sumber: Biteship"
-                )
-
-                await update.message.reply_text(text, reply_markup=reply_markup)
-
-        except Exception:
-            biteship_ok = False
-
-        # ===== Kalau Biteship gagal, fallback ke Binderbyte =====
-        if not biteship_ok:
-            try:
-                binder_data = check_binderbyte(resi, courier)
-
-                if binder_data.get("status") != 200:
-                    await update.message.reply_text(
-                        f"❌ {resi}\nResi tidak ditemukan.",
-                        reply_markup=reply_markup
-                    )
-                    continue
-
-                hasil = binder_data.get("data", {})
-                summary = hasil.get("summary", {})
-                detail = hasil.get("detail", {})
-                history = hasil.get("history", [])
-                last = history[0] if history else {}
-
-                is_cod, cod_amount = detect_cod_from_binderbyte(summary, history)
-                service = str(summary.get("service", "-"))
-
-                text = (
-                    f"{title_label}\n"
-                    f"📦 EKSPEDISI\n└ {courier_label}\n\n"
-                    f"📩 Resi\n├ No Resi : {resi}\n"
-                    f"└ Service : {service}\n\n"
-                    f"📮 Status\n├ {summary.get('status', '-')}\n"
-                    f"└ {summary.get('date', '-')}\n\n"
-                    f"🚩 Penerima\n├ {detail.get('receiver', '-')}\n"
-                    f"└ {detail.get('destination', '-')}\n\n"
-                )
-
-                if is_cod:
-                    if cod_amount:
-                        text += f"💰 Pembayaran : COD\n💵 Nominal COD : {cod_amount}\n\n"
-                    else:
-                        text += "💰 Pembayaran : COD\n\n"
-
-                text += (
-                    f"📍 Update Terakhir\n"
-                    f"├ Lokasi : {last.get('location', '-')}\n"
-                    f"├ Status : {last.get('desc', '-')}\n"
-                    f"└ Waktu : {last.get('date', '-')}\n\n"
-                    f"🔎 Sumber: Binderbyte"
-                )
-
-                await update.message.reply_text(text, reply_markup=reply_markup)
-
-            except Exception:
-                await update.message.reply_text(
-                    f"❌ {resi}\nGagal mengambil data dari semua sumber.",
-                    reply_markup=reply_markup
-                )
-
-        await asyncio.sleep(1)
-
-    await update.message.reply_text("✅ Semua resi selesai dicek.", reply_markup=reply_markup)
-    return ConversationHandler.END
-
-
-# ================== BATAL ==================
-async def batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Dibatalkan.", reply_markup=reply_markup)
-    return ConversationHandler.END
-
-
-# ================== MAIN ==================
 def main():
+    if not TOKEN:
+        raise ValueError("TOKEN belum diisi di Railway Variables")
+    if not API_KEY:
+        raise ValueError("API_KEY belum diisi di Railway Variables")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^🛒 Lazada J&T$"), pilih_jnt),
-            MessageHandler(filters.Regex("^🛒 Lazada Ninja$"), pilih_ninja),
-        ],
-        states={
-            ASK_RESI: [MessageHandler(filters.TEXT & ~filters.COMMAND, cek_resi)],
-        },
-        fallbacks=[CommandHandler("batal", batal)],
-    )
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("cek", cek))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
+    print("Bot jalan...")
     app.run_polling()
 
 
