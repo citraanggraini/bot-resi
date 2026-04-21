@@ -9,8 +9,8 @@ from telegram.ext import (
     filters,
 )
 
-TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
-API_KEY = "69e6273253bfe2f379ff8ee3"
+TOKEN = os.getenv("TOKEN")
+API_KEY = os.getenv("API_KEY")
 
 BASE_URL = "https://api.biteship.com/v1"
 
