@@ -2,7 +2,7 @@
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
 # MASUKKAN TOKEN BOT DI SINI
-TOKEN = "ISI_TOKEN_BOT_KAMU"
+TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
