@@ -1,7 +1,7 @@
  from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-# MASUKKAN TOKEN BOT DI SINI
+
 TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
 
 
