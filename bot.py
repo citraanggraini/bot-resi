@@ -29,22 +29,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif key == "TOTAL":
             total = value
 
-    pesan = f""" Halo! Ini adalah kurir anda dari JNT Xpress! Ini ada paket 
-Resi :
-Isi paket:
-Total:
+    pesan = f"""Halo! Ini adalah kurir anda dari JNT Xpress! Ini ada paket. 
+
+📦 Resi: {resi}
+📄 Isi paket: {isi}
+💰 Total: Rp{total}
 
 Mohon maaf sebelum nya untuk paket COD harap melakukan transfer dahulu ke
 
-BTN
-Rek : 100301700002153
+*BTN*
+Rek :*100301700002153* 
 A/n : Angga Darma Saputra 
 sesuai ketentuan agent yang berlaku, jika tidak bersedia,paket izin kita retur, jika sudah melakukan TF pada hari ini paket nya langsung kami kirim terimakasih
-
-> _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui WhatsApp resmi JNT Express_<
-
-    await update.message.reply_text(pesan)
-
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
