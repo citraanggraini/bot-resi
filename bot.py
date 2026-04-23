@@ -1,54 +1,66 @@
-from telegram import Update
+ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
+# MASUKKAN TOKEN BOT DI SINI
+TOKEN = "ISI_TOKEN_BOT_KAMU"
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    lines = text.split("\n")
 
-    resi = "-"
-    isi = "-"
-    total = "-"
+    # pisah paket berdasarkan ---
+    blocks = [b.strip() for b in text.split("---") if b.strip()]
 
-    for line in lines:
-        if ":" not in line:
-            continue
+    for block in blocks:
+        lines = block.split("\n")
 
-        key, value = line.split(":", 1)
-        key = key.strip().upper()
-        value = value.strip()
+        resi = "-"
+        isi = "-"
+        nomor = "-"
+        harga = "-"
 
-        if key == "RESI":
-            resi = value
-        elif key == "ISI":
-            isi = value
-        elif key == "TOTAL":
-            total = value
+        for line in lines:
+            if ":" not in line:
+                continue
 
-    pesan = f"""Halo! Ini adalah kurir anda dari JNT Xpress! Ini ada paket.
+            key, value = line.split(":", 1)
+            key = key.strip().lower()
+            value = value.strip()
 
-📦 Resi: {resi}
-📄 Isi paket: {isi}
-💰 Total: Rp{total}
+            if "resi" in key:
+                resi = value
+            elif "isi" in key:
+                isi = value
+            elif "nomor" in key or "hp" in key:
+                nomor = value
+            elif "harga" in key:
+                harga = value
+
+        pesan = f"""Halo! Ini adalah kurir anda dari *JNT Xpress*! Ini ada paket.
+
+Resi: {resi}
+Isi paket: {isi}
+Nomor: {nomor}
+Total: Rp{harga}
 
 Mohon maaf sebelum nya untuk paket COD harap melakukan transfer dahulu ke
 
-BTN
-Rek : 100301700002153
-A/n : Angga Darma Saputra
+*BTN*
+*Rek : 100301700002153*
+*A/n : Angga Darma Saputra*
 
 Sesuai ketentuan yang berlaku, apabila tidak bersedia melanjutkan, paket akan dikembalikan.
 Jika pembayaran telah dilakukan hari ini, paket akan segera diproses untuk pengiriman.
 
-Terima kasih."""
+Terima kasih.
+"""
 
-    await update.message.reply_text(pesan)
+        await update.message.reply_text(pesan, parse_mode="Markdown")
 
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot jalan...")
