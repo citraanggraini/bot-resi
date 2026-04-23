@@ -1,11 +1,13 @@
  from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-
 TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
     text = update.message.text.strip()
 
     # pisah paket berdasarkan ---
@@ -40,8 +42,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Resi: {resi}
 Isi paket: {isi}
-Nomor: {nomor}
-Total: Rp{harga}
+Nomo hp: {nomor}
+Harga barang: Rp{harga}
 
 Mohon maaf sebelum nya untuk paket COD harap melakukan transfer dahulu ke
 
@@ -60,7 +62,6 @@ Terima kasih.
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot jalan...")
