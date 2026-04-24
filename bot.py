@@ -55,7 +55,7 @@ Apabila tidak ada konfirmasi pembayaran, maka paket akan *diproses retur ke piha
 Terima kasih.
 """
 
-    await update.message.reply_text(pesan, parse_mode="Markdown")
+    await update.message.reply_text(pesan)
 
 
 def main():
