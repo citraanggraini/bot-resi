@@ -1,67 +1,66 @@
- from telegram import Update
+from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+import re
 
-TOKEN = "8771703967:AAH9-l96ZZ7DQkuvYJwM7ZL9qplpD9j8DQs"
+TOKEN = "8771703967:AAGZg1hbOwDpi6rPJNapLccNrBHpDrdhwZg"
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
+    # ambil text dari user
+    text = update.message.text or ""
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
 
-    text = update.message.text.strip()
+    resi = "-"
+    isi = "-"
+    total = "-"
+    nomor = "-"  # tetap kosong
 
-    # pisah paket berdasarkan ---
-    blocks = [b.strip() for b in text.split("---") if b.strip()]
+    for i, line in enumerate(lines):
 
-    for block in blocks:
-        lines = block.split("\n")
+        # ambil resi
+        if "No Resi" in line:
+            try:
+                resi = line.split(":", 1)[1].strip()
+            except:
+                pass
 
-        resi = "-"
-        isi = "-"
-        nomor = "-"
-        harga = "-"
+        # ambil isi paket (baris setelah "Barang")
+        if "Barang" in line:
+            try:
+                isi = lines[i + 1].replace("┗", "").strip()
+            except:
+                pass
 
-        for line in lines:
-            if ":" not in line:
-                continue
+        # ambil total harga (hanya Rp)
+        if "Rp" in line:
+            cocok = re.search(r"Rp[\d\.\,]+", line)
+            if cocok:
+                total = cocok.group()
 
-            key, value = line.split(":", 1)
-            key = key.strip().lower()
-            value = value.strip()
+    # pesan balasan
+    pesan = f"""Halo! Ini adalah *kurir Anda dari JNT Xpress!* ini ada paket.
 
-            if "resi" in key:
-                resi = value
-            elif "isi" in key:
-                isi = value
-            elif "nomor" in key or "hp" in key:
-                nomor = value
-            elif "harga" in key:
-                harga = value
+*Resi:* {resi}
+*Isi paket:* {isi}
+*Total:* {total}
 
-        pesan = f"""Halo! Ini adalah kurir anda dari *JNT Xpress*! Ini ada paket.
+Mohon maaf sebelumnya, untuk *paket dengan metode pembayaran COD*, sesuai *ketentuan operasional agen JNE wilayah*, pembayaran *dimohon untuk ditransfer terlebih dahulu* agar paket dapat diproses keluar dari gudang pengiriman dan langsung diantar ke alamat tujuan.
 
-Resi: {resi}
-Isi paket: {isi}
-Nomo hp: {nomor}
-Harga barang: Rp{harga}
+*Bank BTN*
+*No. Rekening :* 100301700002153
+*Atas Nama :* Angga Darma Saputra
 
-Mohon maaf sebelum nya untuk paket COD harap melakukan transfer dahulu ke
-
-*BTN*
-*Rek : 100301700002153*
-*A/n : Angga Darma Saputra*
-
-Sesuai ketentuan yang berlaku, apabila tidak bersedia melanjutkan, paket akan dikembalikan.
-Jika pembayaran telah dilakukan hari ini, paket akan segera diproses untuk pengiriman.
+Apabila tidak ada konfirmasi pembayaran, maka paket akan *diproses retur ke pihak pengirim sesuai prosedur pengiriman yang berlaku*
 
 Terima kasih.
 """
 
-        await update.message.reply_text(pesan, parse_mode="Markdown")
+    await update.message.reply_text(pesan, parse_mode="Markdown")
 
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot jalan...")
@@ -70,3 +69,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 
