@@ -44,7 +44,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 *Isi paket:* {isi}
 *Total:* {total}
 
-Mohon maaf sebelumnya, untuk *paket dengan metode pembayaran COD*, sesuai *ketentuan operasional agen JNE wilayah*, pembayaran *dimohon untuk ditransfer terlebih dahulu* agar paket dapat diproses keluar dari gudang pengiriman dan langsung diantar ke alamat tujuan.
+Mohon maaf sebelumnya, untuk *paket dengan metode pembayaran COD*, sesuai *ketentuan operasional agen JNT wilayah*, pembayaran *dimohon untuk ditransfer terlebih dahulu* agar paket dapat diproses keluar dari gudang pengiriman dan langsung diantar ke alamat tujuan.
 
 *Bank BTN*
 *No. Rekening :* 100301700002153
