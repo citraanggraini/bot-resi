@@ -2,9 +2,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 import re
 
-TOKEN = "TOKEN_BOT_KAMU"
-
-
+TOKEN ="8771703967:AAGZg1hbOwDpi6rPJNapLccNrBHpDrdhwZg"  
+ 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ambil text dari user
     text = update.message.text or ""
